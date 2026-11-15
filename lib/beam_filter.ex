@@ -1,10 +1,20 @@
 defmodule EncryptBeam.BeamFilter do
   @moduledoc false
 
+  @encrypt_beam_modules [
+    EncryptBeam,
+    EncryptBeam.BeamFilter,
+    EncryptBeam.LicenseBootHook,
+    EncryptBeam.LicenseWatchdog,
+    EncryptBeam.ProtectedLoader,
+    EncryptBeam.Verifier
+  ]
+
   @doc """
-  Returns paths to all `.beam` files in `build_dir` except the host application's
-  Application module and any modules configured in `:keep_unencrypted_modules`.
+  Returns paths to all `.beam` files in `build_dir` except essential boot,
+  watchdog, notifier, and user-configured unencrypted modules.
   """
+  @spec encryptable_beams(Path.t()) :: [Path.t()]
   def encryptable_beams(build_dir) do
     keep_modules = boot_modules()
 
@@ -19,6 +29,11 @@ defmodule EncryptBeam.BeamFilter do
     end)
   end
 
+  @doc """
+  Returns the full list of module atoms that must remain unencrypted on disk
+  so the VM, supervision tree, license watchdog, and frontend notifier can run.
+  """
+  @spec boot_modules() :: [module()]
   def boot_modules do
     app_mod =
       case Keyword.get(Mix.Project.get().application(), :mod) do
@@ -26,7 +41,14 @@ defmodule EncryptBeam.BeamFilter do
         _ -> []
       end
 
+    notifier_mod =
+      case Application.get_env(:encrypt_beam, :notifier) do
+        mod when is_atom(mod) and not is_nil(mod) -> [mod]
+        _ -> []
+      end
+
     extra_keep = Application.get_env(:encrypt_beam, :keep_unencrypted_modules, [])
-    Enum.uniq(app_mod ++ extra_keep)
+
+    Enum.uniq(@encrypt_beam_modules ++ app_mod ++ notifier_mod ++ extra_keep)
   end
 end
