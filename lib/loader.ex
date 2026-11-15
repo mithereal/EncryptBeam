@@ -1,14 +1,14 @@
 defmodule EncryptBeam.ProtectedLoader do
   @moduledoc """
-  Handles decryption of AES-256-GCM secured BEAM binaries in memory and
-  dynamically loads them into the Erlang VM code server at runtime.
+  Decrypts AES-256-GCM secured BEAM binaries in memory and dynamically loads
+  them into the Erlang VM code server at runtime without touching disk.
   """
   require Logger
 
-  @spec decrypt_and_load_all(binary()) :: :ok | {:error, term()}
-  app_name = Application.fetch_env!(:encrypt_beam, :app_name)
-  def decrypt_and_load_all(encryption_key) do
-    derived_key = :crypto.hash(:sha256, encryption_key)
+  @spec decrypt_and_load_all(binary()) :: :ok
+  def decrypt_and_load_all(encryption_secret) when is_binary(encryption_secret) do
+    app_name = Application.fetch_env!(:encrypt_beam, :app_name)
+    derived_key = :crypto.hash(:sha256, encryption_secret)
     encrypted_dir = Application.app_dir(app_name, "priv/encrypted_beams")
 
     if File.dir?(encrypted_dir) do
@@ -22,11 +22,12 @@ defmodule EncryptBeam.ProtectedLoader do
 
       :ok
     else
-      Logger.warning("[ProtectedLoader] Encrypted beams directory not found: #{encrypted_dir}. Skipping.")
+      Logger.warning(
+        "[ProtectedLoader] Encrypted beams directory not found: #{encrypted_dir}. Skipping."
+      )
+
       :ok
     end
-
-
   end
 
   defp load_single_beam(file_path, key) do
@@ -35,13 +36,14 @@ defmodule EncryptBeam.ProtectedLoader do
     # Unpack blob: [IV (12 bytes) | Tag (16 bytes) | Ciphertext]
     <<iv::binary-size(12), tag::binary-size(16), ciphertext::binary>> = secured_blob
 
-    case :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, ciphertext, <<>>, tag, false) do
+    case :crypto.crypto_one_time_aead(:aes_256_gcm, key, iv, ciphertext, iv, tag, false) do
       decrypted_beam when is_binary(decrypted_beam) ->
         module_name = extract_module_name(file_path)
 
         case :code.load_binary(module_name, to_charlist(file_path), decrypted_beam) do
           {:module, mod} ->
-            Logger.debug("[ProtectedLoader] Successfully loaded protected module: #{inspect(mod)}")
+            Logger.debug("[ProtectedLoader] Loaded protected module: #{inspect(mod)}")
+
           {:error, reason} ->
             raise "[ProtectedLoader] Failed to load module #{inspect(module_name)} into VM: #{inspect(reason)}"
         end
@@ -49,8 +51,6 @@ defmodule EncryptBeam.ProtectedLoader do
       :error ->
         raise "[ProtectedLoader] Cryptographic authentication failed for #{file_path}! Binary may be corrupted or tampered with."
     end
-
-
   end
 
   defp extract_module_name(file_path) do

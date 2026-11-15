@@ -1,9 +1,7 @@
 defmodule EncryptBeam.Verifier do
   @moduledoc """
-  Verifies Ed25519-signed license keys and decrypts session/tenant claims.
+  Verifies Ed25519-signed license keys and extracts license claims.
   """
-
-  @default_public_key_b64 System.get_env("BASE64_ED25519_PUB_KEY") || "REPLACE_WITH_YOUR_32_BYTE_BASE64_ED25519_PUBLIC_KEY"
 
   @spec verify(String.t() | nil, keyword()) :: {:ok, map()} | {:error, atom()}
   def verify(license_key, opts \\ [])
@@ -17,11 +15,11 @@ defmodule EncryptBeam.Verifier do
          {:ok, raw_claims} <- Jason.decode(payload_json),
          :ok <- check_expiration(raw_claims["exp"]) do
       {:ok,
-        %{
-          issue: raw_claims["issue"],
-          tier: raw_claims["tier"],
-          exp: raw_claims["exp"]
-        }}
+       %{
+         issue: raw_claims["issue"],
+         tier: raw_claims["tier"],
+         exp: raw_claims["exp"]
+       }}
     else
       false -> {:error, :invalid_signature}
       {:error, reason} -> {:error, reason}
@@ -42,9 +40,9 @@ defmodule EncryptBeam.Verifier do
     b64 =
       Keyword.get(opts, :public_key) ||
         Application.get_env(:encrypt_beam, :license_public_key) ||
-        @default_public_key_b64
+        System.get_env("BASE64_ED25519_PUB_KEY")
 
-    case Base.decode64(String.trim(b64)) do
+    case is_binary(b64) && Base.decode64(String.trim(b64)) do
       {:ok, key} when byte_size(key) == 32 -> {:ok, key}
       _ -> {:error, :invalid_public_key}
     end

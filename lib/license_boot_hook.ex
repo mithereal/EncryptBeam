@@ -1,43 +1,47 @@
 defmodule EncryptBeam.LicenseBootHook do
   @moduledoc """
-  Hooks the binary decryption/loading sequence directly into the application's
-  license server validation workflow. If a valid signed license key (or server confirmation)
-  is present and verified, it unlocks the decryption key and loads protected modules.
+  Validates the signed license token and triggers in-memory decryption
+  of protected BEAM binaries.
   """
   require Logger
-  alias EncryptBeam.Verifier
-  alias EncryptBeam.ProtectedLoader
+  alias EncryptBeam.{ProtectedLoader, Verifier}
 
+  @spec verify_and_boot!(keyword()) :: {:ok, map()} | :ok
+  def verify_and_boot!(opts \\ []) do
+    lic_token_var = Application.get_env(:encrypt_beam, :license_token_env_var, "LICENSE_KEY")
+    license_key = System.get_env(lic_token_var)
 
-  @doc """
-  Invoked during application boot. Validates the license token, derives the cryptographic
-  decryption key from the validated license claims or environment secret, and loads binaries.
-  """
-  def verify_and_boot! do
-    lic_key_var = Application.fetch_env!(:encrypt_beam, :priv_license_key_env_var)
-    license_key = System.get_env(lic_key_var)
+    enc_secret_var =
+      Application.get_env(:encrypt_beam, :encryption_secret_env_var, "APP_ENCRYPTION_SECRET")
 
-    enc_key_var = Application.fetch_env!(:encrypt_beam, :encryption_salt_env_var)
-    enc_salt = System.get_env(enc_key_var)
+    encryption_secret = System.get_env(enc_secret_var)
 
-    case Verifier.verify(license_key) do
+    strict_mode =
+      Keyword.get(opts, :strict_mode, Application.get_env(:encrypt_beam, :strict_mode, true))
+
+    case Verifier.verify(license_key, opts) do
       {:ok, claims} ->
-        Logger.info("[LicenseBootHook] License verified successfully for Issue: #{claims.issue} (Tier: #{claims.tier})")
+        if is_nil(encryption_secret) or byte_size(encryption_secret) < 32 do
+          raise "[LicenseBootHook] CRITICAL: Missing or invalid #{enc_secret_var} (must be >= 32 bytes)."
+        end
 
-        # Derive decryption key using the license token + a system secret salt
-        decryption_secret = "#{license_key}:#{claims.issue}:#{enc_salt}"
+        Logger.info(
+          "[LicenseBootHook] License verified for Issue: #{claims.issue} (Tier: #{claims.tier})"
+        )
 
-        # Decrypt and load protected modules into the BEAM VM
-        ProtectedLoader.decrypt_and_load_all(decryption_secret)
+        :ok = ProtectedLoader.decrypt_and_load_all(encryption_secret)
+        {:ok, claims}
 
       {:error, reason} ->
-        if Mix.env() == :prod do
-          raise "[LicenseBootHook] CRITICAL: Failed to verify production license for encrypted binaries! Reason: #{inspect(reason)}"
+        if strict_mode do
+          raise "[LicenseBootHook] CRITICAL: License verification failed! Reason: #{inspect(reason)}"
         else
-          Logger.warning("[LicenseBootHook] Development mode: License verification failed (#{inspect(reason)}), falling back to unencrypted build state.")
+          Logger.warning(
+            "[LicenseBootHook] Non-strict mode: License verification failed (#{inspect(reason)}), skipping encrypted beam load."
+          )
+
+          :ok
         end
     end
-
-
   end
 end
