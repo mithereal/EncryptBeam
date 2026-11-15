@@ -1,18 +1,9 @@
 defmodule EncryptBeam do
   @moduledoc """
-  Documentation for `EncryptBeam`.
+  Compiles encrypts and decrypts production BEAM binaries with AES-256-GCM.
   """
 
-  @doc """
-  Hello world.
-
-  ## Examples
-
-      iex> EncryptBeam.hello()
-      :world
-
-  """
-  def hello do
-    :world
-  end
+  defdelegate loader, to: EncryptBeam.ProtectedLoader
+  defdelegate hook, to: EncryptBeam.LicenseBootHook
+  defdelegate verifier, to: EncryptBeam.Verifier
 end

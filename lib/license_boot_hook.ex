@@ -8,20 +8,24 @@ defmodule EncryptBeam.LicenseBootHook do
   alias EncryptBeam.Verifier
   alias EncryptBeam.ProtectedLoader
 
+
   @doc """
   Invoked during application boot. Validates the license token, derives the cryptographic
   decryption key from the validated license claims or environment secret, and loads binaries.
   """
   def verify_and_boot! do
-    license_key = System.get_env("PMS_LICENSE_KEY") || System.get_env("LICENSE_KEY")
+    lic_key_var = Application.fetch_env!(:encrypt_beam, :priv_license_key_env_var)
+    license_key = System.get_env(lic_key_var)
+
+    enc_key_var = Application.fetch_env!(:encrypt_beam, :encryption_salt_env_var)
+    enc_salt = System.get_env(enc_key_var)
 
     case Verifier.verify(license_key) do
       {:ok, claims} ->
-        Logger.info("[LicenseBootHook] License verified successfully for tenant: #{claims.tenant_id} (Tier: #{claims.tier})")
+        Logger.info("[LicenseBootHook] License verified successfully for Issue: #{claims.issue} (Tier: #{claims.tier})")
 
         # Derive decryption key using the license token + a system secret salt
-        salt = System.get_env("APP_ENCRYPTION_SALT", "default-fallback-salt-change-in-production")
-        decryption_secret = "#{license_key}:#{claims.tenant_id}:#{salt}"
+        decryption_secret = "#{license_key}:#{claims.issue}:#{enc_salt}"
 
         # Decrypt and load protected modules into the BEAM VM
         ProtectedLoader.decrypt_and_load_all(decryption_secret)

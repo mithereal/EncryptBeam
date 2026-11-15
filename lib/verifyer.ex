@@ -3,7 +3,7 @@ defmodule EncryptBeam.Verifier do
   Verifies Ed25519-signed license keys and decrypts session/tenant claims.
   """
 
-  @default_public_key_b64 System.get_env("PMS_LICENSE_KEY") || "REPLACE_WITH_YOUR_32_BYTE_BASE64_ED25519_PUBLIC_KEY"
+  @default_public_key_b64 System.get_env("BASE64_ED25519_PUB_KEY") || "REPLACE_WITH_YOUR_32_BYTE_BASE64_ED25519_PUBLIC_KEY"
 
   @spec verify(String.t() | nil, keyword()) :: {:ok, map()} | {:error, atom()}
   def verify(license_key, opts \\ [])
@@ -18,8 +18,7 @@ defmodule EncryptBeam.Verifier do
          :ok <- check_expiration(raw_claims["exp"]) do
       {:ok,
         %{
-          tenant_id: raw_claims["tenant_id"],
-          domain: raw_claims["domain"],
+          issue: raw_claims["issue"],
           tier: raw_claims["tier"],
           exp: raw_claims["exp"]
         }}
@@ -42,7 +41,7 @@ defmodule EncryptBeam.Verifier do
   defp decode_public_key(opts) do
     b64 =
       Keyword.get(opts, :public_key) ||
-        Application.get_env(:ash_phoenix_starter, :license_public_key) ||
+        Application.get_env(:encrypt_beam, :license_public_key) ||
         @default_public_key_b64
 
     case Base.decode64(String.trim(b64)) do

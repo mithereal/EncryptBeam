@@ -6,9 +6,10 @@ defmodule EncryptBeam.ProtectedLoader do
   require Logger
 
   @spec decrypt_and_load_all(binary()) :: :ok | {:error, term()}
+  app_name = Application.fetch_env!(:encrypt_beam, :app_name)
   def decrypt_and_load_all(encryption_key) do
     derived_key = :crypto.hash(:sha256, encryption_key)
-    encrypted_dir = Application.app_dir(:ash_phoenix_starter, "priv/encrypted_beams")
+    encrypted_dir = Application.app_dir(app_name, "priv/encrypted_beams")
 
     if File.dir?(encrypted_dir) do
       encrypted_dir
